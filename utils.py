@@ -9,6 +9,11 @@ import numpy as np
 
 import torch
 
+plt.rc('font', family='serif', serif='cm10')
+plt.rc('text', usetex=True)
+plt.rc('text.latex', preamble=r'\usepackage{amsmath}')
+
+
 def load_data(data_dir, split=0.8):
     with open(os.path.join(data_dir, "ISTAdata/optimal_shuffled.pkl"), 'rb') as ObjFile:
         W, Z_optimal, dataset = pickle.load(ObjFile)
@@ -35,7 +40,7 @@ def load_data(data_dir, split=0.8):
 def parser(FLAGS):
     FLAGS = argparse.ArgumentParser(description='LISTA')
     FLAGS.add_argument('--Trial', type=str, default='authentication', help='Trial')
-    FLAGS.add_argument('--nLayers', type=int, default=5, help='nLayers')
+    FLAGS.add_argument('--nLayers', type=int, default=10, help='nLayers')
     FLAGS.add_argument('--batchSize', type=int, default=512, help='batchSize')
     FLAGS.add_argument('--nEpochs', type=int, default=5000, help='nEpochs')
     FLAGS.add_argument('--lr', type=float, default=1e-5, help='lr')
@@ -64,7 +69,7 @@ def distance_to_optimal(outs, zOpt):
     var = [torch.var(torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0)) for l in outs.keys()]
     return torch.stack(dist, dim=0).detach().cpu().numpy(), torch.sqrt(torch.stack(var, dim=0)).detach().cpu().numpy()
 
-def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x, W, cons, eps, NU):
+def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x=None, W=None, cons=None, eps=None, NU=None, title='original'):
     plt.rcParams["font.size"] = "14"
     # plt.rcParams["font.weight"] = "bold"
     plt.rcParams["font.family"] = "Times New Roman"
@@ -74,7 +79,7 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x, 
     # Figure 1: Distance to optimal
     # sns.set_context('notebook')
     # sns.set_style('darkgrid')
-    plt.figure(1, figsize=(4,3))
+    plt.figure(figsize=(4,3))
     mean, var = distance_to_optimal(outs_constrained, zOpt)
     # plt.subplot(1,2,1)
     plt.plot(mean, 'b', label='constrained LISTA (ours)')
@@ -87,7 +92,7 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x, 
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.savefig('distance_to_optimal.pdf')
+    plt.savefig(f'figs/{title}_distance_to_optimal.pdf')
 
     # # Figure 2: Gradients
     # x1 = [torch.norm(jacobian(objective_function, (outs_constrained[i], x, W), 
@@ -108,7 +113,7 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x, 
     # sns.reset_orig()
 
     # Figure 2: Sparsity measured by l1-norm
-    plt.figure(3, figsize=(16,6))
+    plt.figure(figsize=(16,6))
     j=1
     for i in [0, 1, 3, 5, 7, 9, 10]:
         plt.subplot(2, 4, j)
@@ -135,7 +140,7 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x, 
     plt.grid()
     plt.legend()
     plt.tight_layout()
-    plt.savefig('sparsity.pdf')
+    plt.savefig(f'figs/{title}_sparsity.pdf')
 
 
     # # Figure 3: How often we descend
@@ -147,18 +152,30 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x, 
     # plt.tight_layout()
     # plt.show()
 
-    # Figure 4: Dual variables
-    sns.set_context('notebook')
-    sns.set_style('darkgrid')
-    plt.figure(5, figsize=(6,4))
-    for i in range(NU.shape[1]):
-        plt.plot(NU[:500,i], label=r"$\lambda_{{ {:1} }}$".format(str(i+1)))
-    plt.xlabel("epochs")
-    plt.ylabel("dual variables")
-    plt.legend(loc='upper right')
+    # # Figure 4: Dual variables
+    # sns.set_context('notebook')
+    # sns.set_style('darkgrid')
+    # plt.figure(5, figsize=(6,4))
+    # for i in range(NU.shape[1]):
+    #     plt.plot(NU[:500,i], label=r"$\lambda_{{ {:1} }}$".format(str(i+1)))
+    # plt.xlabel("epochs")
+    # plt.ylabel("dual variables")
+    # plt.legend(loc='upper right')
+    # plt.tight_layout()
+    # plt.savefig('dual_variables.pdf')
+    # sns.reset_orig()
+
+def plot_histograms(value1, value2=None, title=None, c1='k', c2='r'):
+    plt.figure()
+    plt.hist(torch.norm(value1, p=1, dim=0).detach().cpu().numpy(), label='constrained LISTA', alpha=0.5, color=c1)
+    if value2 is not None:
+        plt.hist(torch.norm(value2, p=1, dim=0).detach().cpu().numpy(), label='LISTA', alpha=0.5, color=c2)
+        # plt.legend(loc='best') 
+    plt.xlabel(r"$\|\widehat{\bf x}_L\|_1$")
+    plt.ylabel("Frequency across the testset")
+    plt.grid()
     plt.tight_layout()
-    plt.savefig('dual_variables.pdf')
-    sns.reset_orig()
+    plt.savefig(f'figs/{title}_sparsity.pdf')
 
 def plot_noisyOuts(constrained, unconstrained, betas, zTest_opt):
     plt.rcParams["font.size"] = "14"

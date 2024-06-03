@@ -150,7 +150,7 @@ def evaluate(model, dataset, objective_function, eps, saveResults=False, resultP
     # Save results
     if saveResults and resultPath is not None:
         with open(resultPath, 'wb') as ObjFile:
-            pickle.dump((kwargs['SysID'], xValid, outsValid, zValid_opt, kwargs['NU'], cons, eps), ObjFile)
+            pickle.dump((kwargs['SysID'], xValid, outsValid, zValid_opt, cons, eps), ObjFile)
         
     return validloss, outsValid
 
@@ -191,7 +191,7 @@ def noisy_evaluate(model, dataset, objective_function, eps, saveResults=False, r
     # Save results
     if saveResults and resultPath is not None:
         with open(resultPath+f"_beta{beta}.pkl", 'wb') as ObjFile:
-            pickle.dump((kwargs['SysID'], xValid, outsValid, zValid_opt, kwargs['NU'], cons, eps), ObjFile)
+            pickle.dump((kwargs['SysID'], xValid, outsValid, zValid_opt, cons, eps), ObjFile)
 
     mean, var = distance_to_optimal(outsValid, zValid_opt)
     l1_norm = [torch.norm(outsValid[l], p=1, dim=0).float().mean().item() for l in range(model.nLayers+1)]

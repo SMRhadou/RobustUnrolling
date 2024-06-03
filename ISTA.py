@@ -1,14 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 import os
 import logging
 import pickle
 
 import torch
-from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from torchvision.datasets import ImageFolder
 
 def ISTA_W(Loader, W, alpha, Wsize, iters, batchSize, device):
     nBatches = len(Loader)
@@ -74,7 +71,7 @@ def ISTA(X, W, alpha, iters, device):
                     torch.sum(torch.abs(Z) > 1e-2, dim=0)[0]))
         
         if iter%100 == 0:
-            with open('./ISTAdata/optimal_internal.pkl', 'wb') as ObjFile:
+            with open('./ISTAdata/optimal_internal_OOD.pkl', 'wb') as ObjFile:
                 pickle.dump((W, Z), ObjFile)
 
     return Z, W
