@@ -4,9 +4,6 @@ from tqdm import tqdm
 import os
 import logging
 import pickle
-import argparse
-
-from utils import ISTA_parser
 
 import torch
 from torch.utils.data import DataLoader
@@ -82,10 +79,7 @@ def ISTA(X, W, alpha, iters, device):
 
     return Z, W
 
-def main(alpha=0.5, Wsize=0.5, batchSize=512):
-    FLAGS = argparse.ArgumentParser()
-    _, args = ISTA_parser(FLAGS)
-
+def generate_dataset(args, alpha=0.5, Wsize=0.5, batchSize=512):
     # Logging
     if not os.path.exists("logs"):
         os.makedirs("logs")
@@ -126,7 +120,7 @@ def main(alpha=0.5, Wsize=0.5, batchSize=512):
         Z, W = ISTA(trainData, W, alpha, args.iters, device)
 
     if args.train_W:
-        savePath = './ISTAdata/oWpretrain.pkl'
+        savePath = f'./ISTAdata/oWpretrain_{args.Trial}.pkl'
     else:
         savePath = f'./ISTAdata/optimal_{args.Trial}.pkl'
 
@@ -136,5 +130,5 @@ def main(alpha=0.5, Wsize=0.5, batchSize=512):
 
 
 if __name__ == '__main__':
-    main()  
+    generate_dataset()  
     print('OK!')
