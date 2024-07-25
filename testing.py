@@ -58,31 +58,31 @@ utestloss_noise, ulayer_outputs_noise = evaluate(lista_unconstrained_noise, test
 # plot_histograms(testset[:][1].T, value2=ulayer_outputs[args.nLayers], title=f'original2', xmax=ulayer_outputs[args.nLayers].norm(p=1, dim=0).max().item()+2)
 # plot_histograms(testset[:][1].T, value2=ulayer_outputs[args.nLayers], value3=layer_outputs[args.nLayers], title=f'original3', xmax=ulayer_outputs[args.nLayers].norm(p=1, dim=0).max().item()+2)
 # In-distribution results
-# plotting(objective_function, testset[:][1].T, ulayer_outputs, layer_outputs, ulayer_outputs_noise, x=testset[:][0].T, W=D, title='noisy')
+plotting(objective_function, testset[:][1].T, ulayer_outputs, layer_outputs, ulayer_outputs_noise, x=testset[:][0].T, W=D, title='noisy')
 # make_video(testset[:][1].T, ulayer_outputs, layer_outputs, 'k', 'r', 'b', duration=8)
 
 
-# # Robustness to Perturbations
-# results_constrained = {}
-# results_unconstrained = {}
-# results_unconstrained_noise = {}
+# Robustness to Perturbations
+results_constrained = {}
+results_unconstrained = {}
+results_unconstrained_noise = {}
 
-# betas = [0.01, 0.1, 1, 10, 100, 1000]
-# print(args.eps)
-# for beta in betas:
-#     mean, var, l1_norm, l1_var, descentPercentage = noisy_evaluate(lista_constrained, testset, objective_function, args.eps, saveResults=True, resultPath=f"./Results/{beta}_noisy_constrained",
-#                                 SysID=D.to(device), device=device, beta=beta)
-#     results_constrained[beta] = (mean, var, l1_norm, l1_var, descentPercentage)
+betas = [0.01, 0.1, 1, 10, 100, 1000]
+print(args.eps)
+for beta in betas:
+    mean, var, l1_norm, l1_var, descentPercentage = noisy_evaluate(lista_constrained, testset, objective_function, args.eps, saveResults=True, resultPath=f"./Results/{beta}_noisy_constrained",
+                                SysID=D.to(device), device=device, beta=beta)
+    results_constrained[beta] = (mean, var, l1_norm, l1_var, descentPercentage)
 
-#     mean, var, l1_norm, l1_var, _ = noisy_evaluate(lista_unconstrained, testset, objective_function, args.eps, saveResults=True, resultPath=f"./Results/{beta}_noisy_unconstrained",
-#                                 SysID=D.to(device), device=device, beta=beta)
-#     results_unconstrained[beta] = (mean, var, l1_norm, l1_var)
+    mean, var, l1_norm, l1_var, _ = noisy_evaluate(lista_unconstrained, testset, objective_function, args.eps, saveResults=True, resultPath=f"./Results/{beta}_noisy_unconstrained",
+                                SysID=D.to(device), device=device, beta=beta)
+    results_unconstrained[beta] = (mean, var, l1_norm, l1_var)
 
-#     mean, var, l1_norm, l1_var, _ = noisy_evaluate(lista_unconstrained_noise, testset, objective_function, args.eps, saveResults=True, resultPath=f"./Results/{beta}_noisy_unconstrained",
-#                                 SysID=D.to(device), device=device, beta=beta)
-#     results_unconstrained_noise[beta] = (mean, var, l1_norm, l1_var)
+    mean, var, l1_norm, l1_var, _ = noisy_evaluate(lista_unconstrained_noise, testset, objective_function, args.eps, saveResults=True, resultPath=f"./Results/{beta}_noisy_unconstrained",
+                                SysID=D.to(device), device=device, beta=beta)
+    results_unconstrained_noise[beta] = (mean, var, l1_norm, l1_var)
 
-# plot_noisyOuts(results_constrained, results_unconstrained, results_unconstrained_noise, betas, testset[:][1].T)
+plot_noisyOuts(results_constrained, results_unconstrained, results_unconstrained_noise, betas, testset[:][1].T)
 
 
 # OOD experiments
