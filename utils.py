@@ -6,8 +6,11 @@ import logging
 import seaborn as sns
 
 import numpy as np
-
 import torch
+
+from moviepy.editor import VideoClip
+from moviepy.video.io.bindings import mplfig_to_npimage
+from torch.autograd.functional import jacobian
 
 plt.rc('font', family='serif', serif='cm10')
 plt.rc('text', usetex=True)
@@ -65,39 +68,93 @@ def printing(args):
     logging.debug("="*60)
 
 def distance_to_optimal(outs, zOpt):
-    dist = [torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0).mean() for l in outs.keys()]
-    var = [torch.var(torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0)) for l in outs.keys()]
-    return torch.stack(dist, dim=0).detach().cpu().numpy(), torch.sqrt(torch.stack(var, dim=0)).detach().cpu().numpy()
+    mean = np.array([torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0).mean().item() for l in outs.keys()])
+    max = np.array([torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0).max().item() for l in outs.keys()])
+    min = np.array([torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0).min().item() for l in outs.keys()])
+    var = np.array([torch.var(torch.norm(outs[l][:zOpt.shape[0]]-zOpt, dim=0)).item() for l in outs.keys()])
+    return mean, max, min, np.sqrt(var)
 
-def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x=None, W=None, cons=None, eps=None, NU=None, title='original'):
-    plt.rcParams["font.size"] = "14"
-    # plt.rcParams["font.weight"] = "bold"
-    plt.rcParams["font.family"] = "Times New Roman"
-    plt.rcParams['text.usetex'] = False
+def objective_function_l1reg(y, x, D, alpha=0.5, detach=True):
+    if detach:
+        return 0.5 * torch.norm(x - D.float().detach().cpu() @ y, p=2, dim=0)**2 + alpha * torch.norm(y, p=1, dim=0)
+    else:
+        return 0.5 * torch.norm(x - D.float() @ y, p=2, dim=0)**2 + alpha * torch.norm(y, p=1, dim=0)
+
+def sparse_objective(outs, x, W):
+    mean =  np.array([objective_function_l1reg(outs[l].detach().cpu(), x, W, detach=True).mean().item() for l in outs.keys()])
+    max = np.array([objective_function_l1reg(outs[l].detach().cpu(), x, W, detach=True).max().item() for l in outs.keys()])
+    min = np.array([objective_function_l1reg(outs[l].detach().cpu(), x, W, detach=True).min().item() for l in outs.keys()])
+    return mean, max, min
+
+def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, outs_unconstrained_noise, x=None, W=None, cons=None, eps=None, NU=None, title='original'):
+    # plt.rcParams["font.size"] = "14"
+    # # plt.rcParams["font.weight"] = "bold"
+    # plt.rcParams["font.family"] = "Times New Roman"
+    # plt.rcParams['text.usetex'] = False
+
+    plt.rc('font', family='serif', serif='cm10')
+    plt.rc('text', usetex=True)
+    plt.rc('text.latex', preamble=r'\usepackage{amsmath}')
 
     nLayers = len(outs_unconstrained.keys()) - 1
     # Figure 1: Distance to optimal
     # sns.set_context('notebook')
     # sns.set_style('darkgrid')
-    plt.figure(figsize=(4,3))
-    mean, var = distance_to_optimal(outs_constrained, zOpt)
-    # plt.subplot(1,2,1)
-    plt.plot(mean, 'b', label='constrained LISTA (ours)')
-    plt.errorbar(np.arange(11), mean, yerr=var, fmt='b', capsize=3, alpha=0.5)
-    mean, var = distance_to_optimal(outs_unconstrained, zOpt)
-    plt.plot(mean, 'r', label='LISTA')
-    plt.errorbar(np.arange(11), mean, yerr=var, fmt='r', capsize=3, alpha=0.5)
+    plt.figure(figsize=(8,3))
+    mean, max, min, var = distance_to_optimal(outs_constrained, zOpt)
+    plt.subplot(1,2,1)
+    plt.plot(np.arange(len(outs_unconstrained.keys())), mean, 'b', label='constrained LISTA (ours)', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='blue', alpha=0.1)
+    plt.errorbar(np.arange(len(outs_unconstrained.keys())), mean, yerr=var, fmt='b', capsize=3, alpha=0.5)
+    mean, max, min, var = distance_to_optimal(outs_unconstrained, zOpt)
+    plt.plot(np.arange(len(outs_unconstrained.keys())), mean, 'r', label='LISTA', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    plt.errorbar(np.arange(len(outs_unconstrained.keys())), mean, yerr=var, fmt='r', capsize=3, alpha=0.5)
+    mean, max, min, var = distance_to_optimal(outs_unconstrained_noise, zOpt)
+    plt.plot(np.arange(len(outs_unconstrained.keys())), mean, 'k--', label='uncons. first layer', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    # plt.errorbar(np.arange(len(outs_unconstrained.keys())), mean, yerr=var, fmt='gray', capsize=3, alpha=0.5)
     plt.xlabel("layer $l$")
-    plt.ylabel("Distance to optimal $||\mathbf{y}_l - \mathbf{y}^*||_2$")
-    plt.legend()
+    plt.ylabel("$||\mathbf{y}_l - \mathbf{y}^*||_2$", fontsize=14)
+    plt.legend(prop={'size': 10})
+    plt.ylim((0,50))
+    # plt.yscale('log')
+    plt.grid()
+    # plt.tight_layout()
+    # plt.savefig(f'figs/{title}_distance_to_optimal.pdf')
+
+
+    # plt.figure(figsize=(4,3))
+    mean, max, min= sparse_objective(outs_constrained, x, W)
+    plt.subplot(1,2,2)
+    plt.plot(np.arange(len(outs_unconstrained.keys())), mean, 'b', label='constrained LISTA (ours)', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='blue', alpha=0.1)
+    plt.errorbar(np.arange(len(outs_unconstrained.keys())), mean, yerr=var, fmt='b', capsize=3, alpha=0.5)
+    mean, max, min = sparse_objective(outs_unconstrained, x, W)
+    plt.plot(np.arange(len(outs_unconstrained.keys())), mean, 'r', label='LISTA', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    plt.errorbar(np.arange(len(outs_unconstrained.keys())), mean, yerr=var, fmt='r', capsize=3, alpha=0.5)
+    mean, max, min = sparse_objective(outs_unconstrained_noise, x, W)
+    plt.plot(np.arange(len(outs_unconstrained.keys())), mean, 'k--', label='uncons. first layer', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    # plt.errorbar(np.arange(len(outs_unconstrained.keys())), mean, yerr=var, fmt='gray', capsize=3, alpha=0.5)
+    plt.xlabel("layer $l$")
+    plt.ylabel(r"$f_{sp}(\mathbf{y}_l; \mathbf{x})$", fontsize=14)
+    plt.legend(prop={'size': 10})
+    # plt.ylim((0,30))
+    plt.yscale('log')
     plt.grid()
     plt.tight_layout()
-    plt.savefig(f'figs/{title}_distance_to_optimal.pdf')
+    plt.savefig(f'figs/{title}_sparse_objective.pdf')
+
 
     # # Figure 2: Gradients
-    # x1 = [torch.norm(jacobian(objective_function, (outs_constrained[i], x, W), 
+    # # print(torch.norm(jacobian(objective_function_l1reg, (outs_constrained[0].detach().cpu(), x, W), 
+    # #                     create_graph=True)[0], p=2, dim=0).mean().item())
+    # print(outs_constrained[0].shape)
+    # x1 = [torch.norm(jacobian(objective_function_l1reg, (outs_constrained[i], x, W), 
     #                     create_graph=True)[0], p=2, dim=0).mean().item() for i in range(nLayers+1)]
-    # x2 = [torch.norm(jacobian(objective_function, (outs_unconstrained[i], x, W), 
+    # x2 = [torch.norm(jacobian(objective_function_l1reg, (outs_unconstrained[i], x, W), 
     #                     create_graph=True)[0], p=2, dim=0).mean().item() for i in range(nLayers+1)]
     # # plt.figure(2, figsize=(6,4))
     # plt.subplot(1,2,2)
@@ -105,11 +162,11 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x=N
     # plt.plot(x2, 'r', label='LISTA')
     # plt.xlabel("layer $l$")
     # plt.ylabel(r"$\mathbf{E}[\widehat{\nabla} f_{\theta}(\mathbf{y}_l)]$")
-    # plt.yscale('log')
+    # # plt.yscale('log')
     # plt.legend(loc='upper right')
     # plt.grid()
     # plt.tight_layout()
-    # plt.savefig('gradients.png')
+    # plt.savefig('figs/{title}_gradients.png')
     # sns.reset_orig()
 
     # Figure 2: Sparsity measured by l1-norm
@@ -119,8 +176,9 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x=N
         plt.subplot(2, 4, j)
         plt.hist(torch.norm(outs_constrained[i], p=1, dim=0).detach().cpu().numpy(), label='constrained LISTA', alpha=0.5, color='b')
         plt.hist(torch.norm(outs_unconstrained[i], p=1, dim=0).detach().cpu().numpy(), label='LISTA', alpha=0.5, color='r')
-        plt.xlabel(r"$||\mathbf{{y}}_{{ {:1} }}||_1$".format(i))
-        plt.ylabel("Frequency across the testset")
+        plt.ticklabel_format(axis='y', style='sci', scilimits=(2,2))
+        plt.xlabel(r"$||\mathbf{{y}}_{{ {:1} }}||_1$".format(i), fontsize=14)
+        plt.ylabel("Frequency", fontsize=14)
         plt.grid()
         plt.legend(loc='best')
         if j == 1:
@@ -135,12 +193,13 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x=N
     plt.subplot(2, 4, j)
     plt.hist(torch.norm(zOpt, p=1, dim=0).detach().cpu().numpy(), label='Ground truth', alpha=0.5, color='k')
     plt.xlim((0, 50))
-    plt.xlabel(r"$||\mathbf{y}^*||_1$ ")
-    plt.ylabel("Frequency across the dataset")
+    plt.ticklabel_format(axis='y', style='sci', scilimits=(2,2))
+    plt.xlabel(r"$||\mathbf{y}^*||_1$ ", fontsize=14)
+    plt.ylabel("Frequency", fontsize=14)
     plt.grid()
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f'figs/{title}_sparsity.pdf')
+    plt.savefig(f'figs/{title}_sparse_histogram.pdf')
 
 
     # # Figure 3: How often we descend
@@ -165,23 +224,30 @@ def plotting(objective_function, zOpt, outs_unconstrained, outs_constrained, x=N
     # plt.savefig('dual_variables.pdf')
     # sns.reset_orig()
 
-def plot_histograms(value1, value2=None, title=None, c1='k', c2='r'):
-    plt.figure()
+def plot_histograms(value1, value2=None, value3=None, title=None, c1='k', c2='r', c3='b', xmax=10):
+    plt.figure(figsize=(4,3))
     plt.hist(torch.norm(value1, p=1, dim=0).detach().cpu().numpy(), label='constrained LISTA', alpha=0.5, color=c1)
     if value2 is not None:
         plt.hist(torch.norm(value2, p=1, dim=0).detach().cpu().numpy(), label='LISTA', alpha=0.5, color=c2)
+    if value3 is not None:
+        plt.hist(torch.norm(value3, p=1, dim=0).detach().cpu().numpy(), label='Ground truth', alpha=0.5, color=c3)
         # plt.legend(loc='best') 
-    plt.xlabel(r"$\|\widehat{\bf x}_L\|_1$")
+    plt.xlim((0, xmax))
+    plt.xlabel(r"$||y_L||_1$")
     plt.ylabel("Frequency across the testset")
     plt.grid()
     plt.tight_layout()
     plt.savefig(f'figs/{title}_sparsity.pdf')
 
-def plot_noisyOuts(constrained, unconstrained, betas, zTest_opt):
-    plt.rcParams["font.size"] = "14"
-    # plt.rcParams["font.weight"] = "bold"
-    plt.rcParams["font.family"] = "Times New Roman"
-    plt.rcParams['text.usetex'] = False
+def plot_noisyOuts(constrained, unconstrained, unconstrained_noise, betas, zTest_opt):
+    # plt.rcParams["font.size"] = "14"
+    # # plt.rcParams["font.weight"] = "bold"
+    # plt.rcParams["font.family"] = "Times New Roman"
+    # plt.rcParams['text.usetex'] = False
+
+    plt.rc('font', family='serif', serif='cm10')
+    plt.rc('text', usetex=True)
+    plt.rc('text.latex', preamble=r'\usepackage{amsmath}')
 
     # sns.set_context('notebook')
     # sns.set_style('darkgrid')
@@ -191,10 +257,12 @@ def plot_noisyOuts(constrained, unconstrained, betas, zTest_opt):
     plt.errorbar(betas, [constrained[beta][0][-1] for beta in betas], yerr=[constrained[beta][1][-1] for beta in betas], fmt='b', capsize=3, alpha=0.5)
     plt.plot(betas, [unconstrained[beta][0][-1] for beta in betas], 'r', label='LISTA')
     plt.errorbar(betas, [unconstrained[beta][0][-1] for beta in betas], yerr=[unconstrained[beta][1][-1] for beta in betas], fmt='r', capsize=3, alpha=0.5)
+    plt.plot(betas, [unconstrained_noise[beta][0][-1] for beta in betas], 'gray', label='LISTA w/ noise')
+    plt.errorbar(betas, [unconstrained_noise[beta][0][-1] for beta in betas], yerr=[unconstrained_noise[beta][1][-1] for beta in betas], fmt='gray', capsize=3, alpha=0.5)
     plt.yscale('log')
     plt.xscale('log')
-    plt.xlabel(r"$\hat\sigma$")
-    plt.ylabel("Distance to optimal $||\mathbf{y}_L - \mathbf{y}^*||_2$")
+    plt.xlabel(r"$\hat\sigma$", fontsize=14)
+    plt.ylabel("$||\mathbf{y}_L - \mathbf{y}^*||_2$", fontsize=14)
     plt.grid()
     plt.legend()
 
@@ -203,11 +271,13 @@ def plot_noisyOuts(constrained, unconstrained, betas, zTest_opt):
     plt.errorbar(betas, [constrained[beta][2][-1] for beta in betas], yerr=[constrained[beta][3][-1] for beta in betas], fmt='b', capsize=3, alpha=0.5)
     plt.plot(betas, [unconstrained[beta][2][-1] for beta in betas], 'r', label='LISTA')
     plt.errorbar(betas, [unconstrained[beta][2][-1] for beta in betas], yerr=[unconstrained[beta][3][-1] for beta in betas], fmt='r', capsize=3, alpha=0.5)
+    plt.plot(betas, [unconstrained_noise[beta][2][-1] for beta in betas], 'gray', label='LISTA w/ noise')
+    plt.errorbar(betas, [unconstrained_noise[beta][2][-1] for beta in betas], yerr=[unconstrained_noise[beta][3][-1] for beta in betas], fmt='gray', capsize=3, alpha=0.5)
     plt.plot(betas, [torch.norm(zTest_opt, p=1, dim=0).mean().item() for beta in betas], 'k--', label="Ground truth")
     plt.xscale('log')
     plt.yscale('log')
-    plt.xlabel(r"$\hat\sigma$")
-    plt.ylabel("$||\mathbf{y}_L||_1$")
+    plt.xlabel(r"$\hat\sigma$", fontsize=14)
+    plt.ylabel("$||\mathbf{y}_L||_1$", fontsize=14)
     plt.grid()
     plt.legend()
 
@@ -216,15 +286,102 @@ def plot_noisyOuts(constrained, unconstrained, betas, zTest_opt):
     i=0
     for beta in betas:
         if beta >=1 and beta<1000:
-            plt.plot(np.arange(1,11), constrained[beta][4], colors[i], label=f'$\hat\sigma$ = {beta}')
+            plt.plot(np.arange(1,11), constrained[beta][4]*100, colors[i], label=f'$\hat\sigma$ = {beta}')
             i+=1
-    plt.xlabel(r"layer $l$")
-    plt.ylabel("Descending Frequency")
+    plt.xlabel(r"layer $l$", fontsize=14)
+    plt.ylabel("Descending Frequency (\%)", fontsize=14)
     plt.legend()
     plt.tight_layout()
     plt.grid()
-    plt.savefig('noisy.pdf')
+    plt.savefig('figs/noisy_new.pdf')
     # sns.reset_orig()
+
+
+def plotting_OOD(perturbation_sizes, zOpt, outs_unconstrained, outs_constrained, outs_unconstrained_noise,
+                 x=None, W=None, title='original'):
+    # plt.rcParams["font.size"] = "14"
+    # # plt.rcParams["font.weight"] = "bold"
+    # plt.rcParams["font.family"] = "Times New Roman"
+    # plt.rcParams['text.usetex'] = False
+
+    plt.rc('font', family='serif', serif='cm10')
+    plt.rc('text', usetex=True)
+    plt.rc('text.latex', preamble=r'\usepackage{amsmath}')
+
+    # nLayers = len(outs_unconstrained2[perturbation_sizes[0]].keys()) - 1
+    # Figure 1: Distance to optimal
+    # sns.set_context('notebook')
+    # sns.set_style('darkgrid')
+    plt.figure(figsize=(8,3))
+    mean, max, min, var = distance_to_optimal(outs_constrained, zOpt)
+    plt.subplot(1,2,1)
+    plt.plot(perturbation_sizes, mean, 'b', label='constrained LISTA (ours)', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='blue', alpha=0.1)
+    plt.errorbar(perturbation_sizes, mean, yerr=var, fmt='b', capsize=3, alpha=0.5)
+    mean, max, min, var = distance_to_optimal(outs_unconstrained, zOpt)
+    plt.plot(perturbation_sizes, mean, 'r', label='LISTA', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    plt.errorbar(perturbation_sizes, mean, yerr=var, fmt='r', capsize=3, alpha=0.5)
+    mean, max, min, var = distance_to_optimal(outs_unconstrained_noise, zOpt)
+    plt.plot(perturbation_sizes, mean, 'gray', label='LISTA w/ noise', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    plt.errorbar(perturbation_sizes, mean, yerr=var, fmt='gray', capsize=3, alpha=0.5)
+    plt.xlabel("perturbation size $p$")
+    plt.ylabel(r"$||\mathbf{y}_L - \tilde{\mathbf{y}}^*||_2$", fontsize=14)
+    plt.legend(prop={'size': 10})
+    # plt.ylim((0,30))
+    # plt.yscale('log')
+    plt.grid()
+    # plt.tight_layout()
+    # plt.savefig(f'figs/{title}_distance_to_optimal.pdf')
+
+
+    # plt.figure(figsize=(4,3))
+    mean, max, min= sparse_objective(outs_constrained, x, W)
+    plt.subplot(1,2,2)
+    plt.plot(perturbation_sizes, mean, 'b', label='constrained LISTA (ours)', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='blue', alpha=0.1)
+    plt.errorbar(perturbation_sizes, mean, yerr=var, fmt='b', capsize=3, alpha=0.5)
+    mean, max, min = sparse_objective(outs_unconstrained, x, W)
+    plt.plot(perturbation_sizes, mean, 'r', label='LISTA', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    plt.errorbar(perturbation_sizes, mean, yerr=var, fmt='r', capsize=3, alpha=0.5)
+    mean, max, min = sparse_objective(outs_unconstrained_noise, x, W)
+    plt.plot(perturbation_sizes, mean, 'gray', label='LISTA w/ noise', linewidth=2)
+    # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    plt.errorbar(perturbation_sizes, mean, yerr=var, fmt='gray', capsize=3, alpha=0.5)
+    plt.ticklabel_format(axis='y', style='sci', scilimits=(1,1))
+    plt.xlabel("perturbation size $p$")
+    plt.ylabel(r"$f_{sp}(\mathbf{y}_L; \tilde{\mathbf{x}})$", fontsize=14)
+    plt.legend(prop={'size': 10})
+    # plt.ylim((0,30))
+    # plt.yscale('log')
+    plt.grid()
+
+
+    # plt.subplot(1,3,3)
+    # for p in perturbation_sizes:
+    #     mean, max, min, var = distance_to_optimal(outs_constrained2[p], zOpt)
+    #     plt.plot(np.arange(len(outs_unconstrained2[p].keys())), mean, 'b', label='constrained LISTA (ours)', linewidth=2)
+    #     # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='blue', alpha=0.1)
+    #     plt.errorbar(np.arange(len(outs_unconstrained2[p].keys())), mean, yerr=var, fmt='b', capsize=3, alpha=0.5)
+    #     mean, max, min, var = distance_to_optimal(outs_unconstrained2[p], zOpt)
+    #     plt.plot(np.arange(len(outs_unconstrained2[p].keys())), mean, 'r', label='LISTA', linewidth=2)
+    #     # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    #     plt.errorbar(np.arange(len(outs_unconstrained2[p].keys())), mean, yerr=var, fmt='r', capsize=3, alpha=0.5)
+    #     # mean, max, min, var = distance_to_optimal(outs_unconstrained_noise2[p], zOpt)
+    #     # plt.plot(np.arange(len(outs_unconstrained2[p].keys())), mean, 'gray', label='LISTA w/ noise', linewidth=2)
+    #     # # plt.fill_between(np.arange(mean.shape[-1]), min, max, color='red', alpha=0.1)
+    #     # plt.errorbar(np.arange(len(outs_unconstrained2[p].keys())), mean, yerr=var, fmt='gray', capsize=3, alpha=0.5)
+    #     plt.xlabel("layer $l$")
+    #     plt.ylabel("$||\mathbf{y}_l - \mathbf{y}^*||_2$", fontsize=14)
+    #     # plt.legend(prop={'size': 10})
+    #     plt.grid()
+
+
+
+    plt.tight_layout()
+    plt.savefig(f'figs/{title}_sparse_objective.pdf')
 
 
 def plot_trajectory(outs_unconstrained, outs_constrained, trajectory, xset, exp, **kwargs):
@@ -284,3 +441,33 @@ def plot_trajectory(outs_unconstrained, outs_constrained, trajectory, xset, exp,
     ax[2].set_ylim([-40, 40])
     plt.tight_layout()
     plt.savefig(f'GD_trajectory_{exp}.pdf')
+
+
+
+# Video
+
+def make_video(value1, value2, value3, c1, c2, c3, duration=2):
+    def make_frame(t):
+        # clear
+        ax.clear()
+        
+        # plotting line
+        ax.hist(torch.norm(value1, p=1, dim=0).detach().cpu().numpy(),  alpha=0.5, color=c1)
+        ax.hist(torch.norm(value2[int(t*11/duration)], p=1, dim=0).detach().cpu().numpy(), alpha=0.5, color=c2)
+        ax.hist(torch.norm(value3[int(t*11/duration)], p=1, dim=0).detach().cpu().numpy(), alpha=0.5, color=c3)
+        ax.title.set_text(f'sparsity at layer {int(t*11/duration)}')
+        ax.set_xlim(-50, 600)
+        ax.get_yaxis().set_visible(False)
+        ax.set_xlabel(r"$||y_L||_1$")
+        ax.set_ylabel("Frequency")
+        # ax.set_ylim(0, 3500)
+        # ax.grid()
+        
+        # returning numpy image
+        return mplfig_to_npimage(fig)
+
+    fig, ax = plt.subplots()
+    animation = VideoClip(make_frame, duration = duration)
+    animation.ipython_display(fps = 20, loop = True, autoplay = True)
+    # animation.write_gif("histogram.gif") 
+    # fig.savefig('figs/animation.mp4')

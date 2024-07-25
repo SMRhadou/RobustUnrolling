@@ -141,8 +141,8 @@ def main():
     logfile = f"./logs/LISTA/logfile_LISTA_{args.Trial}.log"
     logging.basicConfig(filename=logfile, level=logging.DEBUG, force=True)
     if not os.path.exists(f"models/{args.Trial}"):
-        os.makedirs(f"models/{args.Trial}")
-    modelPath = f"./models/{args.Trial}/"
+        os.makedirs(f"models/{args.Trial}_L{args.nLayers}")
+    modelPath = f"./models/{args.Trial}_L{args.nLayers}/"
 
     logging.debug("Trial ...")
     printing(vars(args))

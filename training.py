@@ -172,10 +172,10 @@ def noisy_evaluate(model, dataset, objective_function, eps, saveResults=False, r
 
         if grad:
             cons = GradPenalty(objective_function, xValid, outsValid, eps=eps,**kwargs)
-            consBeforeNoise = GradPenalty(objective_function, xValid, zbeforeNoise, eps=eps,**kwargs) - eps
+            consBeforeNoise = GradPenalty(objective_function, xValid, zbeforeNoise, eps=eps,**kwargs) - (1-eps)
         else:
             cons = distancePenalty(zValid_opt, outsValid, eps=eps,**kwargs)
-            consBeforeNoise = distancePenalty(zValid_opt, zbeforeNoise, eps=eps,**kwargs) - eps
+            consBeforeNoise = distancePenalty(zValid_opt, zbeforeNoise, eps=eps,**kwargs) - (1-eps)
         descentPercentage = torch.mean((consBeforeNoise < 0).float(), dim=1).detach().cpu().numpy()
         logging.debug('distance to optimal: {}'.format(list(distance_to_optimal(outsValid, zValid_opt)[0])))
         #logging.debug('distance to my optimal: {}'.format(list(disance_to_optimal(outsValid, zValid))))
@@ -193,7 +193,7 @@ def noisy_evaluate(model, dataset, objective_function, eps, saveResults=False, r
         with open(resultPath+f"_beta{beta}.pkl", 'wb') as ObjFile:
             pickle.dump((kwargs['SysID'], xValid, outsValid, zValid_opt, cons, eps), ObjFile)
 
-    mean, var = distance_to_optimal(outsValid, zValid_opt)
+    mean, _, _, var = distance_to_optimal(outsValid, zValid_opt)
     l1_norm = [torch.norm(outsValid[l], p=1, dim=0).float().mean().item() for l in range(model.nLayers+1)]
     l1_var = [torch.sqrt(torch.var(torch.norm(outsValid[l], p=1, dim=0))).item() for l in range(model.nLayers+1)]
         
