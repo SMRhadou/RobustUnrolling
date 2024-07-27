@@ -30,6 +30,27 @@ def unconstrained_learning(model, dataset, optimizer, **kwargs):
         optimizer.zero_grad()
     return model
 
+def benchmark_learning(model, dataset, optimizer, **kwargs):
+    device = kwargs["device"]
+    batchSize = kwargs["batchSize"]
+    nBatches = kwargs["nBatches"]
+    l = kwargs["l"]
+    
+    # Mini-Batch Ttraining
+    for ibatch in range(nBatches):
+        # Forward
+        xbatch, Zbatch_opt = dataset[ibatch*batchSize:(ibatch+1)*batchSize]
+        xbatch = xbatch.T.to(device)
+        Zbatch_opt = Zbatch_opt.T.to(device).float()
+        Zbatch, outs = model(xbatch, **kwargs)
+        loss = loss_function(z=outs[l], z_opt=Zbatch_opt)
+
+        # Backward
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+    return model
+
 def objective_function(z, x, W, alpha=0.5):
     return torch.sum(0.5 * torch.norm(x - W.float() @ z, p=2, dim=0)**2) # + alpha * torch.norm(z, p=2, dim=0))
 def objective_function_l1reg(z, x, W, alpha=0.5):

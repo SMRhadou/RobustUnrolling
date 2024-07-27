@@ -54,6 +54,8 @@ def parser(FLAGS):
     FLAGS.add_argument('--constrained', action="store_true")
     FLAGS.add_argument('--noisyOuts', action="store_true")
     FLAGS.add_argument('--supervised', action="store_true")
+    FLAGS.add_argument('--benchmark1', action="store_true", help='lpl training')
+    FLAGS.add_argument('--benchmark2', action="store_true", help='incremental training')
     # Data generation
     FLAGS.add_argument('--WpretrainPath', type=str, default='./ISTAdata/Wpretrain.pkl', help='Wpretrain file path')
     FLAGS.add_argument('--iters', type=int, default=3000, help='iters')

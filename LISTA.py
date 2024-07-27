@@ -7,7 +7,7 @@ import argparse
 
 from ISTA import generate_dataset
 from utils import load_data, parser, printing
-from training import constrained_learning, unconstrained_learning, evaluate, loss_function
+from training import constrained_learning, unconstrained_learning, evaluate, loss_function, benchmark_learning
 
 import torch
 import torch.nn as nn
@@ -131,6 +131,84 @@ def train(lista, dataset, optimizer, objective_function, W, args, device, split,
         torch.cuda.empty_cache()
     return lista, NU
 
+def lpl_train(lista, dataset, objective_function, W, args, device, split, **kwargs):
+    nTrain = int(len(dataset) * split)
+    nBatches = nTrain // args.batchSize
+    modelPath = kwargs["modelPath"]
+    constrained = args.constrained
+    noisyOuts = args.noisyOuts
+
+    # train and valid dataset
+    trainset = torch.utils.data.TensorDataset(dataset[:nTrain][0], dataset[:nTrain][1])
+    validset = torch.utils.data.TensorDataset(dataset[nTrain:][0], dataset[nTrain:][1])
+
+    # Optimizer
+    optimizer = [optim.Adam(lista.layers[i].parameters(), lr=args.lr) for i in range(lista.nLayers)]
+
+    best = np.inf
+    for l in tqdm(range(lista.nLayers)):
+        for epoch in tqdm(range(args.nEpochs), leave=False):
+            # Training
+            lista = benchmark_learning(lista, trainset, optimizer[l], SysID=W, batchSize=args.batchSize, l=l+1,
+                                            nBatches=nBatches, noisyOuts=noisyOuts, eps=args.eps, device=device)
+
+            # Validation
+            validloss, _ = evaluate(lista, validset, objective_function, eps=args.eps, SysID=W.to(device), device=device, epoch=(l+1)*epoch)
+
+            # Save model
+            if validloss < best:
+                best = validloss
+                torch.save({"epoch": (l+1)*epoch,
+                            "model_state_dict": lista.state_dict(),
+                            "valid_loss": validloss
+                            }, modelPath+"LISTA_best.pth")
+            logging.debug("best: {}".format(best))
+                
+            del validloss
+            torch.cuda.empty_cache()
+    return lista
+
+def inc_train(lista, dataset, objective_function, W, args, device, split, **kwargs):
+    nTrain = int(len(dataset) * split)
+    nBatches = nTrain // args.batchSize
+    modelPath = kwargs["modelPath"]
+    constrained = args.constrained
+    noisyOuts = args.noisyOuts
+
+    # train and valid dataset
+    # trainset = torch.utils.data.TensorDataset(dataset[:nTrain//10][0], dataset[:nTrain][1])
+    validset = torch.utils.data.TensorDataset(dataset[nTrain:][0], dataset[nTrain:][1])
+
+    # Optimizer
+    optimizer = optim.Adam(lista.layers[0].parameters(), lr=args.lr)
+
+    best = np.inf
+    for l in tqdm(range(lista.nLayers), leave=False):
+        if l>0:
+            optimizer.add_param_group({'params': lista.layers[l].parameters(), 'lr': args.lr})
+        trainset = torch.utils.data.TensorDataset(dataset[l*nTrain//10:(l+1)*nTrain//10][0], dataset[l*nTrain//10:(l+1)*nTrain//10][1])
+
+        for epoch in tqdm(range(args.nEpochs), leave=False):
+            # Training
+            lista = benchmark_learning(lista, trainset, optimizer, SysID=W, batchSize=args.batchSize, l=l+1,
+                                            nBatches=nBatches, noisyOuts=noisyOuts, eps=args.eps, device=device)
+
+            # Validation
+            validloss, _ = evaluate(lista, validset, objective_function, eps=args.eps, SysID=W.to(device), device=device, epoch=(l+1)*epoch)
+
+            # Save model
+            if validloss < best:
+                best = validloss
+                torch.save({"epoch": (l+1)*epoch,
+                            "model_state_dict": lista.state_dict(),
+                            "valid_loss": validloss
+                            }, modelPath+"LISTA_best.pth")
+            logging.debug("best: {}".format(best))
+                
+            del validloss
+            torch.cuda.empty_cache()
+    return lista
+
 def main():
     FLAGS = argparse.ArgumentParser()
     _, args = parser(FLAGS)
@@ -138,11 +216,11 @@ def main():
     # Logging
     if not os.path.exists("logs/LISTA"):
         os.makedirs("logs/LISTA")
-    logfile = f"./logs/LISTA/logfile_LISTA_{args.Trial}.log"
+    logfile = f"./logs/LISTA/logfile_LISTA__L{args.nLayers}_lr_{args.lr}_lrdual_{args.lr_dual}_eps_{args.eps}_constrained_{args.constrained}.log"
     logging.basicConfig(filename=logfile, level=logging.DEBUG, force=True)
-    if not os.path.exists(f"models/{args.Trial}"):
-        os.makedirs(f"models/{args.Trial}_L{args.nLayers}")
-    modelPath = f"./models/{args.Trial}_L{args.nLayers}/"
+    if not os.path.exists(f"models/{args.Trial}_L{args.nLayers}_lr_{args.lr}_lrdual_{args.lr_dual}_eps_{args.eps}_constrained_{args.constrained}"):
+        os.makedirs(f"models/{args.Trial}_L{args.nLayers}_lr_{args.lr}_lrdual_{args.lr_dual}_eps_{args.eps}_constrained_{args.constrained}")
+    modelPath = f"./models/{args.Trial}_L{args.nLayers}_lr_{args.lr}_lrdual_{args.lr_dual}_eps_{args.eps}_constrained_{args.constrained}/"
 
     logging.debug("Trial ...")
     printing(vars(args))
@@ -172,12 +250,23 @@ def main():
 
     # Training
     torch.cuda.empty_cache()
-    lista, NU = train(lista, dataset, optimizer, objective_function, D, args, device, split=0.8, modelPath=modelPath)
+    
+    if args.benchmark1:
+        # Benchmarks (layer per layer training)
+        NU = None
+        lista = lpl_train(lista, dataset, objective_function, D, args, device, split=0.8, modelPath=modelPath)
+    elif args.benchmark2:
+        # Benchmarks (incremental training)
+        NU = None
+        lista = inc_train(lista, dataset, objective_function, D, args, device, split=0.8, modelPath=modelPath)
+    else:
+        # Proposed constrained learning
+        lista, NU = train(lista, dataset, optimizer, objective_function, D, args, device, split=0.8, modelPath=modelPath)
 
     # Testing
     if not os.path.exists("Results"):
         os.makedirs("Results")
-    resultPath = f"./Results/{args.Trial}.pkl"
+    resultPath = f"./Results/{args.Trial}_L{args.nLayers}_lr_{args.lr}_lrdual_{args.lr_dual}_eps_{args.eps}_constrained_{args.constrained}.pkl"
     logging.debug("\n Testing ...")
     checkpoint = torch.load(modelPath+"LISTA_best.pth")
     lista.load_state_dict(checkpoint["model_state_dict"])
